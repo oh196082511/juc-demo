@@ -1,1 +1,2 @@
-# juc-demo
+本项目为jdk8的aqs、reentranlock、线程池的手撕简单实现
+尽量还原源码的功能、代码和逻辑，方便理解源码
