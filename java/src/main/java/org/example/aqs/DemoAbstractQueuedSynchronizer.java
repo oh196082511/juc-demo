@@ -315,16 +315,18 @@ public abstract class DemoAbstractQueuedSynchronizer extends DemoAbstractOwnable
     }
 
     /**
-     * Wakes up node's successor, if one exists.
-     *
-     * @param node the node
+     * 核心方法，子类自行实现
+     * @param arg
+     * @return
+     */
+    protected boolean tryRelease(int arg) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * 唤醒node的后继节点
      */
     private void unparkSuccessor(Node node) {
-        /*
-         * If status is negative (i.e., possibly needing signal) try
-         * to clear in anticipation of signalling.  It is OK if this
-         * fails or if status is changed by waiting thread.
-         */
         int ws = node.waitStatus;
         if (ws < 0)
             // 将node的ws设置为0
@@ -343,13 +345,10 @@ public abstract class DemoAbstractQueuedSynchronizer extends DemoAbstractOwnable
     }
 
     /**
-     * Checks and updates status for a node that failed to acquire.
-     * Returns true if thread should block. This is the main signal
-     * control in all acquire loops.  Requires that pred == node.prev.
-     *
-     * @param pred node's predecessor holding status
-     * @param node the node
-     * @return {@code true} if thread should block
+     * acquire失败后，判断是否需要park
+     * @param pred
+     * @param node
+     * @return
      */
     private static boolean shouldParkAfterFailedAcquire(Node pred, Node node) {
         int ws = pred.waitStatus;
@@ -381,6 +380,20 @@ public abstract class DemoAbstractQueuedSynchronizer extends DemoAbstractOwnable
      */
     protected boolean tryAcquire(int arg) {
         throw new UnsupportedOperationException();
+    }
+
+    /**
+     * 独占模式下尝试释放锁
+     */
+    public final boolean release(int arg) {
+        if (tryRelease(arg)) {
+            Node h = head;
+            if (h != null && h.waitStatus != 0)
+                // 释放成功后，通过head唤醒后继节点
+                unparkSuccessor(h);
+            return true;
+        }
+        return false;
     }
 
 
