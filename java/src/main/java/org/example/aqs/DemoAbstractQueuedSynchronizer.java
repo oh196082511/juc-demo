@@ -259,12 +259,87 @@ public abstract class DemoAbstractQueuedSynchronizer extends DemoAbstractOwnable
         } finally {
             // 最终发生了异常，取消抢锁
             if (failed) {
-                // TODO 待实现
                 // 没有被设置成头结点，说明一直在队列里，准备取消抢锁
-                // cancelAcquire(node);
+                cancelAcquire(node);
             }
 
         }
+    }
+
+    /**
+     * 取消一个节点
+     * @param node the node
+     */
+    private void cancelAcquire(Node node) {
+        // 节点不存在，直接返回
+        if (node == null)
+            return;
+
+        node.thread = null;
+
+        // 直接将node的pre连到上一个没cancel的节点上
+        Node pred = node.prev;
+        while (pred.waitStatus > 0)
+            node.prev = pred = pred.prev;
+
+        // 保存一下pred的next引用地址，后面CAS会用到
+        Node predNext = pred.next;
+
+        // 设置为取消状态
+        node.waitStatus = Node.CANCELLED;
+
+        // 现状是
+        // pred <----- node----->next
+
+        if (node == tail && compareAndSetTail(node, pred)) {
+            // 如果node是tail，直接将pred设置为tail，然后将pred的next设置为null
+            compareAndSetNext(pred, predNext, null);
+        } else {
+            // If successor needs signal, try to set pred's next-link
+            // so it will get one. Otherwise wake it up to propagate.
+            int ws;
+            if (pred != head &&
+                    ((ws = pred.waitStatus) == Node.SIGNAL ||
+                            (ws <= 0 && compareAndSetWaitStatus(pred, ws, Node.SIGNAL))) &&
+                    pred.thread != null) {
+                Node next = node.next;
+                if (next != null && next.waitStatus <= 0)
+                    compareAndSetNext(pred, predNext, next);
+            } else {
+                // unpark后继节点
+                unparkSuccessor(node);
+            }
+
+            node.next = node; // help GC
+        }
+    }
+
+    /**
+     * Wakes up node's successor, if one exists.
+     *
+     * @param node the node
+     */
+    private void unparkSuccessor(Node node) {
+        /*
+         * If status is negative (i.e., possibly needing signal) try
+         * to clear in anticipation of signalling.  It is OK if this
+         * fails or if status is changed by waiting thread.
+         */
+        int ws = node.waitStatus;
+        if (ws < 0)
+            // 将node的ws设置为0
+            compareAndSetWaitStatus(node, ws, 0);
+
+        // 找到第一个没有cancel的后继节点s，然后unpark
+        Node s = node.next;
+        if (s == null || s.waitStatus > 0) {
+            s = null;
+            for (Node t = tail; t != null && t != node; t = t.prev)
+                if (t.waitStatus <= 0)
+                    s = t;
+        }
+        if (s != null)
+            LockSupport.unpark(s.thread);
     }
 
     /**
@@ -351,6 +426,12 @@ public abstract class DemoAbstractQueuedSynchronizer extends DemoAbstractOwnable
                                                          int update) {
         return unsafe.compareAndSwapInt(node, waitStatusOffset,
                 expect, update);
+    }
+
+    private static final boolean compareAndSetNext(Node node,
+                                                   Node expect,
+                                                   Node update) {
+        return unsafe.compareAndSwapObject(node, nextOffset, expect, update);
     }
 
 }
