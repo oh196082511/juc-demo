@@ -2,6 +2,7 @@ package org.example.aqs;
 
 import sun.misc.Unsafe;
 
+import java.util.concurrent.locks.AbstractQueuedSynchronizer;
 import java.util.concurrent.locks.LockSupport;
 
 /**
@@ -37,6 +38,11 @@ public abstract class DemoAbstractQueuedSynchronizer extends DemoAbstractOwnable
          * waitStatus值=-1表示 节点执行完毕后需要唤醒下一个节点
          */
         static final int SIGNAL = -1;
+
+        /**
+         * waitStatus值=-2表示 节点为条件队列过来的节点
+         */
+        static final int CONDITION = -2;
 
         /**
          * waitStatus值=-3表示 节点传播唤醒，用于共享模式
@@ -505,6 +511,174 @@ public abstract class DemoAbstractQueuedSynchronizer extends DemoAbstractOwnable
      */
     protected boolean tryReleaseShared(int arg) {
         throw new UnsupportedOperationException();
+    }
+
+    /**
+     * 等待子类实现，判断是否为当前线程独占锁
+     * @return
+     */
+    protected boolean isHeldExclusively() {
+        throw new UnsupportedOperationException();
+    }
+
+
+    public class ConditionObject {
+
+        // 首个等待节点
+        private transient Node firstWaiter;
+
+        // 最后一个等待节点
+        private transient Node lastWaiter;
+
+        public ConditionObject() { }
+
+        // 唤醒一个等待队列节点
+        public final void signal() {
+            if (!isHeldExclusively())
+                // 如果不是当前线程持有锁，抛出异常
+                throw new IllegalMonitorStateException();
+            Node first = firstWaiter;
+            if (first != null)
+                // 唤醒首个等待节点
+                doSignal(first);
+        }
+
+
+        private void doSignal(Node first) {
+            do {
+                if ( (firstWaiter = first.nextWaiter) == null)
+                    lastWaiter = null;
+                first.nextWaiter = null;
+            } while (!transferForSignal(first) &&
+                    (first = firstWaiter) != null);
+        }
+
+        final boolean transferForSignal(Node node) {
+
+            if (!compareAndSetWaitStatus(node, Node.CONDITION, 0))
+                // 如果节点状态不是CONDITION，说明已经被取消了
+                return false;
+
+            // 将节点加入到同步队列中
+            Node p = enq(node);
+            int ws = p.waitStatus;
+            if (ws > 0 || !compareAndSetWaitStatus(p, ws, Node.SIGNAL))
+                // 取消节点会走到这
+                LockSupport.unpark(node.thread);
+
+            // 这里放到同步队列中就好了，node里的线程早就已经在await方法中被park
+            // 后续同步队列会逐渐唤醒，轮到它就会醒了，核心还是看await的方法
+            return true;
+        }
+
+        public final void await() throws InterruptedException {
+            if (Thread.interrupted())
+                throw new InterruptedException();
+            Node node = addConditionWaiter();
+
+            // 释放自己的锁
+            int savedState = fullyRelease(node);
+            int interruptMode = 0;
+            while (!isOnSyncQueue(node)) {
+                // 如果不在同步队列中，就park
+                LockSupport.park(this);
+                // 这里的Demo不关注interrupt模块，减少复杂度
+//                if ((interruptMode = checkInterruptWhileWaiting(node)) != 0)
+//                    break;
+            }
+            // 出来循环，说明被某个signal唤醒了，准备进入同步队列
+            acquireQueued(node, savedState);
+            if (node.nextWaiter != null)
+                unlinkCancelledWaiters();
+        }
+
+        private Node addConditionWaiter() {
+            Node t = lastWaiter;
+            if (t != null && t.waitStatus != Node.CONDITION) {
+                // 如果最后一个节点被取消，则清除所有已取消的节点
+                unlinkCancelledWaiters();
+                t = lastWaiter;
+            }
+
+            // 创建一个条件节点，将其加入到条件队列中
+            Node node = new Node(Thread.currentThread(), Node.CONDITION);
+            if (t == null)
+                firstWaiter = node;
+            else
+                t.nextWaiter = node;
+            lastWaiter = node;
+            return node;
+        }
+
+        /**
+         * 循环清除已取消的节点
+         */
+        private void unlinkCancelledWaiters() {
+            Node t = firstWaiter;
+            Node trail = null;
+            while (t != null) {
+                Node next = t.nextWaiter;
+                if (t.waitStatus != Node.CONDITION) {
+                    t.nextWaiter = null;
+                    if (trail == null)
+                        firstWaiter = next;
+                    else
+                        trail.nextWaiter = next;
+                    if (next == null)
+                        lastWaiter = trail;
+                }
+                else
+                    trail = t;
+                t = next;
+            }
+        }
+
+
+        final int fullyRelease(Node node) {
+            boolean failed = true;
+            try {
+                int savedState = getState();
+                if (release(savedState)) {
+                    failed = false;
+                    return savedState;
+                } else {
+                    throw new IllegalMonitorStateException();
+                }
+            } finally {
+                if (failed)
+                    node.waitStatus = Node.CANCELLED;
+            }
+        }
+
+        final boolean isOnSyncQueue(Node node) {
+            if (node.waitStatus == Node.CONDITION || node.prev == null)
+                // 是CONDITION状态，或者prev为null，说明不在队列里
+                return false;
+            if (node.next != null)
+                // 有next肯定在队列里
+                return true;
+            /*
+             * node.prev can be non-null, but not yet on queue because
+             * the CAS to place it on queue can fail. So we have to
+             * traverse from tail to make sure it actually made it.  It
+             * will always be near the tail in calls to this method, and
+             * unless the CAS failed (which is unlikely), it will be
+             * there, so we hardly ever traverse much.
+             */
+            return findNodeFromTail(node);
+        }
+
+        private boolean findNodeFromTail(Node node) {
+            Node t = tail;
+            for (;;) {
+                if (t == node)
+                    return true;
+                if (t == null)
+                    return false;
+                t = t.prev;
+            }
+        }
+
     }
 
 
