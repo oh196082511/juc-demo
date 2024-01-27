@@ -457,11 +457,16 @@ public class DemoThreadPoolExecutor implements Executor {
             if ((wc > maximumPoolSize || (timed && timedOut))
                     && (wc > 1 || workQueue.isEmpty())) {
                 if (compareAndDecrementWorkerCount(c))
+                    // 如果核心线程需要销毁(通过allowCoreThreadTimeOut=true配置)
+                    // 或者线程数量大于核心线程数量，且超时了或者队列为空
+                    // 这里返回null，上层会走到worker的退出逻辑
                     return null;
                 continue;
             }
 
             try {
+                // 如果只有核心线程，会阻塞在这里
+                // 否则会超时，回到上面的循环
                 Runnable r = timed ?
                         workQueue.poll(keepAliveTime, TimeUnit.NANOSECONDS) :
                         workQueue.take();
