@@ -279,5 +279,54 @@ public class DemoHashMap<K, V> {
         return null;
     }
 
+    public V remove(Object key) {
+        DemoNode<K,V> e;
+        return (e = removeNode(hash(key), key)) == null ?
+                null : e.value;
+    }
+
+    final DemoNode<K,V> removeNode(int hash, Object key) {
+        DemoNode<K,V>[] tab;
+        DemoNode<K,V> p;
+        int n, index;
+        if ((tab = table) != null && (n = tab.length) > 0 &&
+                (p = tab[index = (n - 1) & hash]) != null) {
+            // 如果表存在，且存在节点，则开始搜索
+            // 逻辑跟get大差不差
+            DemoNode<K,V> node = null, e;
+            K k;
+            V v;
+
+            // 找到匹配的node，以及它的前驱节点p(p==node表示node是第一个节点)
+            if (p.hash == hash &&
+                    ((k = p.key) == key || (key != null && key.equals(k)))) {
+                node = p;
+            } else if ((e = p.next) != null) {
+                do {
+                    if (e.hash == hash &&
+                            ((k = e.key) == key ||
+                                    (key != null && key.equals(k)))) {
+                        node = e;
+                        break;
+                    }
+                    p = e;
+                } while ((e = e.next) != null);
+            }
+            if (node != null) {
+                if (node == p)
+                    // 如果node是第一个节点，直接将node.next赋值给tab[index]
+                    tab[index] = node.next;
+                else
+                    // 否则，将node.next赋值给p.next
+                    p.next = node.next;
+                ++modCount;
+                --size;
+                return node;
+            }
+        }
+        // 找不到，返回null
+        return null;
+    }
+
 
 }
