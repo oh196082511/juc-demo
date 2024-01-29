@@ -250,5 +250,34 @@ public class DemoHashMap<K, V> {
         return newTab;
     }
 
+    public V get(Object key) {
+        DemoNode<K,V> e;
+        return (e = getNode(hash(key), key)) == null ? null : e.value;
+    }
+
+    final DemoNode<K,V> getNode(int hash, Object key) {
+        DemoNode<K,V>[] tab;
+        DemoNode<K,V> first, e;
+        int n;
+        K k;
+        if ((tab = table) != null && (n = tab.length) > 0 &&
+                (first = tab[(n - 1) & hash]) != null) {
+            // 如果表存在，且存在节点，则开始搜索
+            if (first.hash == hash &&
+                    ((k = first.key) == key || (key != null && key.equals(k))))
+                // 必须hash相等且(key相等或者equals)
+                return first;
+            if ((e = first.next) != null) {
+                // 否则，无脑找到最后一个节点，直到找到为止
+                do {
+                    if (e.hash == hash &&
+                            ((k = e.key) == key || (key != null && key.equals(k))))
+                        return e;
+                } while ((e = e.next) != null);
+            }
+        }
+        return null;
+    }
+
 
 }
