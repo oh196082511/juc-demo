@@ -1,6 +1,10 @@
 package org.example.hashmap;
 
+import java.util.HashMap;
+
 public class DemoHashMap<K, V> {
+
+    final float loadFactor;
 
     // 负载因子，超过会扩容
     static final float DEFAULT_LOAD_FACTOR = 0.75f;
@@ -18,10 +22,15 @@ public class DemoHashMap<K, V> {
     transient int modCount;
 
     // 容器允许的键值对最大阈值，超过会扩容
+    // 通过数组长度*负载因子得到
     int threshold;
 
     // 节点数组
     transient DemoNode<K,V>[] table;
+
+    public DemoHashMap() {
+        this.loadFactor = DEFAULT_LOAD_FACTOR;
+    }
 
     /**
      * 节点
@@ -127,7 +136,119 @@ public class DemoHashMap<K, V> {
     }
 
     final DemoNode<K,V>[] resize() {
-        // TODO
-        return null;
+        // 拿到原数组
+        DemoNode<K,V>[] oldTab = table;
+
+        // 拿到原数组的长度
+        int oldCap = (oldTab == null) ? 0 : oldTab.length;
+
+        // 原来的阈值
+        int oldThr = threshold;
+
+        // 新容量，新阈值
+        int newCap, newThr = 0;
+
+        if (oldCap > 0) {
+            // 如果原来的容量大于0，说明原来的数组已经初始化过了
+            if (oldCap >= MAXIMUM_CAPACITY) {
+                // 已经达到最大容量，阈值设置为最大值，返回原数组
+                threshold = Integer.MAX_VALUE;
+                return oldTab;
+            }
+            else if ((newCap = oldCap << 1) < MAXIMUM_CAPACITY &&
+                    oldCap >= DEFAULT_INITIAL_CAPACITY)
+                // 扩容2倍，但是不能超过最大容量。阈值扩大2倍
+                newThr = oldThr << 1; //
+        } else if (oldThr > 0) {
+            // 还没初始化过，新容量为阈值
+            newCap = oldThr;
+        } else {
+            // 还没初始化过，阈值也没有设置过，使用默认值
+            newCap = DEFAULT_INITIAL_CAPACITY;
+            newThr = (int) (DEFAULT_LOAD_FACTOR * DEFAULT_INITIAL_CAPACITY);
+        }
+        if (newThr == 0) {
+            // 如果还没初始化过，计算新阈值
+            float ft = (float)newCap * loadFactor;
+            newThr = (newCap < MAXIMUM_CAPACITY && ft < (float)MAXIMUM_CAPACITY ?
+                    (int)ft : Integer.MAX_VALUE);
+        }
+
+        // 计算完新容量和新阈值，准备设置到hashmap中
+        threshold = newThr;
+
+        // 创建新数组
+        @SuppressWarnings({"rawtypes","unchecked"})
+        DemoNode<K,V>[] newTab = (DemoNode<K,V>[])new DemoNode[newCap];
+
+        // 设置到hashmap中(并发情况下，可能会导致其他get操作拿不到值)
+        table = newTab;
+
+        // 准备开始复制
+        if (oldTab != null) {
+            for (int j = 0; j < oldCap; ++j) {
+                // 遍历原数组
+                DemoNode<K,V> e;
+                if ((e = oldTab[j]) != null) {
+                    // 如果原数组的元素不为空，准备复制
+
+                    // 将原数组的元素置为null，方便回收原数组
+                    oldTab[j] = null;
+                    if (e.next == null) {
+                        // e如果是最后一个节点，直接复制到新数组中
+                        newTab[e.hash & (newCap - 1)] = e;
+                    } else {
+                        // 将老节点下的所有数据移动到新数组中
+                        // 老数据会一分为二，一半在低位(原数组索引)，一半在高位(新数组相对老数组新增区域)
+
+                        // 低位
+                        DemoNode<K,V> loHead = null, loTail = null;
+
+                        // 高位
+                        DemoNode<K,V> hiHead = null, hiTail = null;
+                        DemoNode<K,V> next;
+
+
+                        // 针对链表而言
+                        // 原链表头节点转化为head，尾节点转化为tail
+                        do {
+                            // 拿到e的next
+                            next = e.next;
+                            if ((e.hash & oldCap) == 0) {
+                                // 低位
+                                if (loTail == null)
+                                    loHead = e;
+                                else
+                                    loTail.next = e;
+                                loTail = e;
+                            }
+                            else {
+                                // 高位
+                                if (hiTail == null)
+                                    hiHead = e;
+                                else
+                                    hiTail.next = e;
+                                hiTail = e;
+                            }
+                        } while ((e = next) != null);
+
+                        if (loTail != null) {
+                            // 赋值低位
+                            loTail.next = null;
+                            newTab[j] = loHead;
+                        }
+                        if (hiTail != null) {
+                            // 赋值高位
+                            hiTail.next = null;
+                            newTab[j + oldCap] = hiHead;
+                        }
+                    }
+
+                }
+            }
+        }
+        return newTab;
     }
+
+
 }
